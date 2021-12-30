@@ -1,0 +1,15 @@
+.vscode/*
+*__pycache__*
+
+# Datasets zipped and unpacked are ommited due to their size
+zipped_dataset/*
+data/
+
+img/*
+
+# Test extracted photos
+out/extracted*
+
+# Test files
+convert*.py
+creating*.ipynb
