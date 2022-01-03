@@ -20,8 +20,11 @@ class Scene2(Scene):
         self.max_r = max([card.get_radius() for card in self.cards])
 
         self.bbox_offset = self.max_width // 6
+        
         self.bbox_size = self.max_width // 4
         self.bbox_half = self.bbox_size // 2
+
+        self.rotate = iaa.Affine(rotate=(-180, 180))
 
         self.scene = self._generate_scene()
 
@@ -36,35 +39,43 @@ class Scene2(Scene):
 
         left_card, right_card = self.cards
 
+        # rotate and insert left card
         left_bounds = self._get_left_bounds(center_x, center_y)
         rotated = self._rotate(left_card)
-        self._merge(scene, rotated, left_bounds)
 
+        insert_position = self._get_card_insert_position(rotated, left_bounds)
+        self._merge(scene, rotated, insert_position)
+
+        # rotate and insert right card
         right_bounds = self._get_right_bounds(center_x, center_y)
         rotated = self._rotate(right_card)
-        self._merge(scene, rotated, right_bounds)
+
+        insert_position = self._get_card_insert_position(rotated, right_bounds)
+        self._merge(scene, rotated, insert_position)
 
         return scene
 
-    def _merge(self, scene, rotated: np.array, bounds):
-        rotated_w, rotated_h, _ = rotated.shape
+    def _get_card_insert_position(self, card: Card, bounds) -> np.s_:
+        rotated_w, rotated_h = card.shape[:2]
 
         offset_x = bounds[0] - rotated_w // 2
         offset_y = bounds[1] - rotated_h // 2
 
-        roi = scene[offset_y : offset_y + rotated_h, offset_x : offset_x + rotated_w]
+        return np.s_[offset_y : offset_y + rotated_h, offset_x : offset_x + rotated_w]
 
-        rotated_gray = cv2.cvtColor(rotated, cv2.COLOR_BGR2GRAY)
-        _, mask = cv2.threshold(rotated_gray, 0, 255, cv2.THRESH_BINARY)
+    # insert_position slice of background image on which to merge foreground image
+    def _merge(self, background, foreground: np.array, insert_position: np.s_):
+        roi = background[insert_position]
+
+        foreground_gray = cv2.cvtColor(foreground, cv2.COLOR_BGR2GRAY)
+        _, mask = cv2.threshold(foreground_gray, 0, 255, cv2.THRESH_BINARY)
         mask_inv = cv2.bitwise_not(mask)
 
-        scene_bg = cv2.bitwise_and(roi, roi, mask=mask_inv)
+        background_bg = cv2.bitwise_and(roi, roi, mask=mask_inv)
+        mask_fg = cv2.bitwise_and(foreground, foreground, mask=mask)
 
-        mask_fg = cv2.bitwise_and(rotated, rotated, mask=mask)
-
-        dst = cv2.add(scene_bg, mask_fg)
-
-        scene[offset_y : offset_y + rotated_h, offset_x : offset_x + rotated_w] = dst
+        dst = cv2.add(background_bg, mask_fg)
+        background[insert_position] = dst
 
     def _rotate(self, card: Card) -> np.array:
         rotation_box = np.zeros((self.max_r * 2, self.max_r * 2, 4), dtype=np.uint8)
@@ -77,9 +88,7 @@ class Scene2(Scene):
             offset_y : offset_y + card_h, offset_x : offset_x + card_w
         ] = card.image
 
-        rotate = iaa.Affine(rotate=(-180, 180))
-
-        return rotate(image=rotation_box)
+        return self.rotate(image=rotation_box)
 
     def _get_left_bounds(self, center_x, center_y):
         left_bounds = [
