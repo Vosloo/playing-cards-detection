@@ -24,5 +24,7 @@ WIDTH = "width"
 HEIGHT = "height"
 CLASS = "class"
 
+RETRIES = 3
+
 ROOT_PATH = Path(__file__).resolve().parents[1]
 IMAGES_PATH = Path(ROOT_PATH, IMAGES, SCANS)
