@@ -10,7 +10,7 @@ class CardFactory:
     A factory for creating card objects.
     """
 
-    def __init__(self, dataset_path) -> None:
+    def __init__(self, dataset_path=TEST) -> None:
         self.images_paths = self._load_images_paths(dataset_path)
         self.no_images = len(self.images_paths)
 
@@ -18,7 +18,7 @@ class CardFactory:
         return self.no_images
 
     def get_random_cards(self, k=1) -> List[Card]:
-        return [Card(path) for path in random.sample(self.images_paths, k)]
+        return [Card(path) for path in random.sample(self.images_paths, k=k)]
 
     def _load_images_paths(self, dataset_path):
         paths = ROOT_PATH.joinpath(IMAGES + SCANS + dataset_path + LABELED).glob("**/*")
@@ -28,5 +28,5 @@ class CardFactory:
 
 if __name__ == "__main__":
     cf = CardFactory(TEST)
-    cf.get_random_cards()
-
+    (card,) = cf.get_random_cards()
+    card.display()

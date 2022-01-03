@@ -1,5 +1,6 @@
 import pickle
 import random
+from typing import List
 
 import matplotlib.image as mpimg
 
@@ -15,21 +16,12 @@ class BackgroundFactory:
     def get_no_images(self):
         return self.no_images
 
-    def get_random_background(self) -> Background:
-        return Background(self.images[random.randint(0, self.no_images - 1)])
+    def get_random_backgrounds(self, k=1) -> List[Background]:
+        return [Background(path) for path in random.sample(self.images, k=k)]
 
 if __name__ == "__main__":
     bf = BackgroundFactory()
-    
-    avg_width = 0
-    avg_height = 0
-    for image in bf.images:
-        bg = Background(image)
-        height, width, _ = bg.get_size()
-        avg_width += width
-        avg_height += height
+    bgs = bf.get_random_backgrounds(k=2)
 
-    avg_width /= bf.no_images
-    avg_height /= bf.no_images
-
-    print(avg_width, avg_height)
+    for bg in bgs:
+        bg.display()

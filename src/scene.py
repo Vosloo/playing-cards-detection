@@ -1,31 +1,23 @@
-from typing import List, overload
+from typing import List, Tuple
 
 import cv2
+import matplotlib.pyplot as plt
 import numpy as np
-import imgaug as ia
 from imgaug import augmenters as iaa
-from imgaug.augmentables import Keypoint, Polygon, KeypointsOnImage, PolygonsOnImage
+from imgaug.augmentables import Polygon, PolygonsOnImage
 from matplotlib import pyplot as plt
+from PIL import Image
 
 from background import Background
-from background_factory import BackgroundFactory
-
 from card import Card
 from card_factory import CardFactory
+from config import RETRIES, TEST
 
-from config import TEST
-import sys
-from time import perf_counter
-
-import matplotlib.pyplot as plt
-
-CARD_POLY_LABEL = "card"
 SYMBOL_INTERSECT_RATIO = 0.5
 
 
 class Scene:
-    def __init__(self, bg: Background, cards: List[Card]) -> None:
-        self.bg = bg
+    def __init__(self, cards: List[Card]) -> None:
         self.cards = cards
         self.scene = None
         self.scene_shape = None
@@ -45,8 +37,33 @@ class Scene:
 
         self.scene = self._generate_scene()
 
+    def add_background(self, background: Background):
+        _, bg_h = background.get_size()
+        _, scene_h = self.scene_shape
+        offset_y = int((bg_h / 2) - (scene_h / 2))
+
+        self._merge(
+            background,
+            self.scene,
+            (0, offset_y),
+        )
+
+    def display(self):
+        plt.axis("off")
+        plt.imshow(self.scene)
+        plt.show()
+
+    def get_size(self):
+        return self.scene_shape
+
     def _generate_scene(self):
         no_cards = len(self.cards)
+        # Calculating scene width and height based:
+        # - number of cards
+        # - size of bounding boxes (sqaure bounding box of user defined size in which card center is confined. Each card has its own bounding box
+        # separated by some user defined spacing)
+        # - size of bounding box spacing (space between bounding boxes)
+        # - max_r (half the radius of biggest card)
         scene_w = (
             (no_cards * (self.bbox_size))
             + ((no_cards - 1) * self.bbox_spacing)
@@ -54,8 +71,9 @@ class Scene:
         )
         scene_h = 2 * (self.max_r + self.bbox_half)
 
-        self.scene_shape = (scene_h, scene_w, 4)
-        scene = np.zeros(self.scene_shape, dtype=np.uint8)
+        self.scene_shape = (scene_w, scene_h)
+
+        scene = Image.new('RGBA', self.scene_shape)
 
         for card in self.cards:
             card_center_point = self._get_card_center_point()
@@ -65,18 +83,19 @@ class Scene:
                 print("Failed to add card to scene. Skipping card")
                 continue
 
-            insert_position = self._get_card_insert_position(rotated, card_center_point)
-            self._merge(scene, rotated, insert_position)
+            anchor_point = self._get_card_anchor_point(rotated, card_center_point)
+            self._merge(scene, rotated, anchor_point)
 
         return scene
 
-    def _get_card_insert_position(self, rotated: np.array, bounds: List[int]) -> np.s_:
-        rotated_w, rotated_h = rotated.shape[:2]
+    def _get_card_center_point(self):
+        center_point = [
+            np.random.randint(*self.card_bbox_x),
+            np.random.randint(*self.card_bbox_y),
+        ]
+        self.card_bbox_x = [i + self.bbox_spacing for i in self.card_bbox_x]
 
-        offset_x = bounds[0] - rotated_w // 2
-        offset_y = bounds[1] - rotated_h // 2
-
-        return np.s_[offset_y : offset_y + rotated_h, offset_x : offset_x + rotated_w]
+        return center_point
 
     def _rotate(self, card: Card, center_point) -> np.array:
         rotation_box = np.zeros((self.max_r * 2, self.max_r * 2, 4), dtype=np.uint8)
@@ -89,7 +108,7 @@ class Scene:
 
         rotation_box[
             offset_y : offset_y + card_h, offset_x : offset_x + card_w
-        ] = card.image
+        ] = card.numpy_image()
 
         # card translation from scene [0,0]
         card_translation = (
@@ -104,11 +123,10 @@ class Scene:
             [
                 *[
                     Polygon(hull, label=f"symbol_{i}")
-                    for i, hull in enumerate(card.hulls)
+                    for i, hull in enumerate(card._hulls)
                 ],
                 Polygon(
-                    [(0, 0), (card_w, 0), (card_w, card_h), (0, card_h)],
-                    label=CARD_POLY_LABEL,
+                    [(0, 0), (card_w, 0), (card_w, card_h), (0, card_h)], label="card",
                 ),
             ],
             shape=self.scene_shape,
@@ -118,7 +136,7 @@ class Scene:
         card_polygons = translate(polygons=card_polygons)
 
         # trying n times till success
-        for i in range(3):
+        for _ in range(RETRIES):
             rotated_image, card_polygons_rotated = self.rotate(
                 image=rotation_box, polygons=card_polygons
             )
@@ -159,43 +177,29 @@ class Scene:
 
         return None
 
-    def _get_card_center_point(self):
-        center_point = [
-            np.random.randint(*self.card_bbox_x),
-            np.random.randint(*self.card_bbox_y),
-        ]
-        self.card_bbox_x = [i + self.bbox_spacing for i in self.card_bbox_x]
+    def _get_card_anchor_point(
+        self, rotated: np.array, bounds: List[int]
+    ) -> Tuple[int]:
+        rot_w, rot_h, _ = rotated.shape
+        offset_x = bounds[0] - rot_w // 2
+        offset_y = bounds[1] - rot_h // 2
 
-        return center_point
+        return (offset_x, offset_y)
 
-    # insert_position slice of background image on which to merge foreground image
-    def _merge(self, background, foreground: np.array, insert_position: np.s_):
-        roi = background[insert_position]
+    # Merging 2 pictures
+    def _merge(self, background, foreground, anchor_point):
+        if not isinstance(foreground, Image.Image):
+            foreground = Image.fromarray(np.uint8(foreground))
 
-        foreground_gray = cv2.cvtColor(foreground, cv2.COLOR_BGR2GRAY)
-        _, mask = cv2.threshold(foreground_gray, 0, 255, cv2.THRESH_BINARY)
-        mask_inv = cv2.bitwise_not(mask)
+        if isinstance(background, Background):
+            background = background.get_image()
 
-        background_bg = cv2.bitwise_and(roi, roi, mask=mask_inv)
-        mask_fg = cv2.bitwise_and(foreground, foreground, mask=mask)
-
-        dst = cv2.add(background_bg, mask_fg)
-        background[insert_position] = dst
-
-    def display(self):
-        plt.axis("off")
-        plt.imshow(self.scene)
-        plt.show()
-
-    def get_final(self):
-        return self.final
+        background.paste(foreground, anchor_point, foreground)
 
 
 if __name__ == "__main__":
     cf = CardFactory(TEST)
-    bf = BackgroundFactory()
 
-    bg = bf.get_random_background()
-    cards = cf.get_random_cards(k=4)
-    scene = Scene(bg, cards)
+    cards = cf.get_random_cards(k=3)
+    scene = Scene(cards)
     scene.display()
