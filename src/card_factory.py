@@ -1,8 +1,7 @@
-import os
 import random
 from typing import List
 
-from config import IMAGES, LABELED, SCANS, TEST
+from config import ROOT_PATH, IMAGES, LABELED, SCANS, TEST
 from card import Card
 
 
@@ -12,24 +11,22 @@ class CardFactory:
     """
 
     def __init__(self, dataset_path) -> None:
-        self.images = self._load_images_names(dataset_path)
-        self.no_images = len(self.images)
+        self.images_paths = self._load_images_paths(dataset_path)
+        self.no_images = len(self.images_paths)
 
     def get_no_images(self):
         return self.no_images
 
     def get_random_cards(self, k=1) -> List[Card]:
-        return [Card(fname) for fname in random.sample(self.images, k)]
+        return [Card(path) for path in random.sample(self.images_paths, k)]
 
-    def _load_images_names(self, dataset_path):
-        images = os.listdir(IMAGES + SCANS + dataset_path + LABELED)
-        images = [IMAGES + SCANS + dataset_path + LABELED + item for item in images]
+    def _load_images_paths(self, dataset_path):
+        paths = ROOT_PATH.joinpath(IMAGES + SCANS + dataset_path + LABELED).glob("**/*")
+        images = [p for p in paths if p.is_file()]
         return images
+
 
 if __name__ == "__main__":
     cf = CardFactory(TEST)
-    card, = cf.get_random_cards()
-    print(card)
-    print(card.get_fname(), card)
-    print(card.get_size(), card.get_radius())
-    card.display()
+    cf.get_random_cards()
+
