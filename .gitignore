@@ -3,7 +3,7 @@
 
 # Datasets zipped and unpacked are ommited due to their size
 zipped_dataset/*
-data/
+images/
 
 img/*
 
