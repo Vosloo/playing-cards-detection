@@ -29,9 +29,9 @@ class Scene:
         self.scene = None
         self.scene_shape = None
 
-        max_width = max([card.get_size()[0] for card in self.cards])
         self.max_r = max([card.get_radius() for card in self.cards])
 
+        max_width = max([card.get_size()[0] for card in self.cards])
         self.bbox_spacing = max_width // 3
         self.bbox_size = max_width // 4
         self.bbox_half = self.bbox_size // 2
@@ -45,7 +45,7 @@ class Scene:
         self.scene = self._generate_scene()
         self._transform_scene()
 
-    def add_background(self, background: Background):
+    def add_background(self, background: Background) -> PolygonsOnImage:
         bg_w, bg_h = background.get_size()
         scene_h, scene_w, _ = self.scene_shape
 
@@ -56,8 +56,7 @@ class Scene:
             offset = (0, int((bg_h / 2) - (scene_h / 2)))
             self._merge(background, self.scene, offset)
 
-        self.visible_polygons.shift_(*offset)
-        # ia.imshow(self._draw_polygons(np.array(background.get_image())))
+        return self.visible_polygons.shift(*offset)
 
     def get_visible_polygons(self):
         return self.visible_polygons
@@ -237,3 +236,4 @@ if __name__ == "__main__":
 
     cards = cf.get_random_cards(k=2)
     scene = Scene(cards)
+    scene.display()

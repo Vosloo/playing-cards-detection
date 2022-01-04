@@ -1,4 +1,8 @@
+from pathlib import Path
+
 from PIL import Image
+
+from config import LABELS, DATASET, IMAGES, ROOT_PATH, IMAGES_PATH, LABELS_PATH
 
 
 class Background:
@@ -12,7 +16,7 @@ class Background:
     def get_size(self):
         return self._image.size
 
-    def get_image(self):
+    def get_image(self) -> Image.Image:
         return self._image
 
     def get_fname(self):
@@ -21,8 +25,11 @@ class Background:
     def resize(self, new_size: tuple):
         self._image = self._image.resize(new_size)
 
-    def save_background(self, fname):
-        self._image.save(fname)
+    def save_background(self, fname, labels):
+        self._image.save(IMAGES_PATH / (fname + ".jpg"))
+        
+        with open(LABELS_PATH / (fname + ".txt"), "w") as f:
+            f.writelines(labels)
 
     @property
     def dtype(self):

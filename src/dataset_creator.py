@@ -1,69 +1,95 @@
-from background_factory import BackgroundFactory
-from card_factory import CardFactory
-from scene import Scene
-from time import perf_counter
-from config import DATASET, ROOT_PATH, IMAGES, ANNOTATIONS, RESIZE
+import json
+import shutil
+from copy import deepcopy
 from pathlib import Path
+from random import randint
+from time import perf_counter
 
 import imgaug as ia
 import numpy as np
+from tqdm import tqdm
+
+from background_factory import BackgroundFactory
+from card_factory import CardFactory
+from config import LABELS, CLASS_MAPPING, DATA, DATASET, IMAGES, RESIZE, ROOT_PATH, SCANS
+from scene import Scene
+
 
 class DatasetCreator:
-    def __init__(self, no_cards, no_backgrounds, no_outputs) -> None:
-        self.no_cards = no_cards
+    def __init__(self, max_no_cards, no_backgrounds, no_scenes) -> None:
+        self.max_no_cards = max_no_cards
         self.no_backgrounds = no_backgrounds
-        self.no_outputs = no_outputs
-        self.annotations_path = Path(ROOT_PATH, DATASET, ANNOTATIONS)
+        self.no_outputs = no_scenes
+        self.labels_path = Path(ROOT_PATH, DATASET, LABELS)
         self.images_path = Path(ROOT_PATH, DATASET, IMAGES)
 
-        self.card_factory = CardFactory()
+        self.card_factory = CardFactory(dataset_path=DATA)
         self.background_factory = BackgroundFactory()
+        self.mapping = json.load(open(Path(ROOT_PATH, IMAGES, SCANS, CLASS_MAPPING)))
 
     def create_dataset(self) -> None:
         """
         Creates a dataset of scenes with cards and backgrounds where size of 
-        the generated dataset is defined as no_backgrounds * no_outputs.
+        the generated dataset is defined as no_backgrounds * no_scenes.
         """
-        backgrounds = self.background_factory.get_random_backgrounds(
-            self.no_backgrounds
-        )
 
         # Create dataset directory
-        self.annotations_path.mkdir(
-            parents=True, exist_ok=True
-        )
-        self.images_path.mkdir(
-            parents=True, exist_ok=True
-        )
+        shutil.rmtree(self.labels_path, ignore_errors=True)
+        shutil.rmtree(self.images_path, ignore_errors=True)
+        self.labels_path.mkdir(parents=True, exist_ok=True)
+        self.images_path.mkdir(parents=True, exist_ok=True)
 
         no_scenes = 0
         start = perf_counter()
-        for _ in range(self.no_outputs):
-            cards = self.card_factory.get_random_cards(self.no_cards)
+        for _ in tqdm(range(self.no_outputs)):
+            no_cards = randint(1, self.max_no_cards)
+
+            cards = self.card_factory.get_random_cards(no_cards)
+            backgrounds = self.background_factory.get_random_backgrounds(
+                self.no_backgrounds
+            )
+
             scene = Scene(cards)
             for background in backgrounds:
+                background_copy = deepcopy(background)
+
                 # Resize background to fit scene (to 1:1 ratio)
                 max_size = max(scene.get_size())
-                background.resize((max_size, max_size))
+                background_copy.resize((max_size, max_size))
 
-                # Adding background modifies polygons
-                scene.add_background(background)
-                
-                polygons = scene.get_visible_polygons()
-                
+                # TODO: Change name of background and method add_background
+                # Add merge bg_cp and scene and return polygons
+                polygons = scene.add_background(background_copy)
+
                 # Scale background and update polygons
-                background.resize(RESIZE)
-                polygons.on_(RESIZE)
-                draw_polygons(polygons, np.array(background.get_image()))
+                background_copy.resize(RESIZE)
 
-                background.display()
-                # background.save_background(self.images_path.joinpath(f'img{no_scenes}.png'))
-                
-                # TODO: Add other transformations??
-                # TODO: Fix Polygons
-                # TODO: Change naming background -> canvas or smth
-                # TODO: Rescale background
-                # TODO: Save background
+                # Convert polygons into bounding boxes
+                bboxes = [
+                    poly.project((max_size, max_size), RESIZE).to_bounding_box()
+                    for poly in polygons
+                ]
+
+                labels = []
+                size, _ = RESIZE
+                for bbox in bboxes:
+                    # Normalize dimmentions
+                    yolo = list(
+                        np.array(
+                            [bbox.center_x, bbox.center_y, bbox.width, bbox.height]
+                        )
+                        / size
+                    )
+                    labels.append(
+                        " ".join(str(i) for i in [self.mapping[bbox.label], *yolo])
+                        + "\n"
+                    )
+
+                fname =  f"{no_scenes}_" + "".join([card.get_fname() for card in cards])
+
+                # Save image and labels
+                background_copy.save_background(fname, labels)
+
                 no_scenes += 1
 
         print("Time taken: {}".format(perf_counter() - start))
@@ -71,8 +97,9 @@ class DatasetCreator:
 
 
 def draw_polygons(polygons, image):
-    ia.imshow(polygons.draw_on_image(image))
+    ia.imshow(polygons.draw_on_image(image), backend="cv2")
+
 
 if __name__ == "__main__":
-    dc = DatasetCreator(no_cards=2, no_backgrounds=1, no_outputs=1)
+    dc = DatasetCreator(max_no_cards=3, no_backgrounds=10, no_scenes=100)
     dc.create_dataset()
