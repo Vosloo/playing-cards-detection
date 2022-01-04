@@ -29,9 +29,6 @@ class Card:
     def get_image(self):
         return self._image
 
-    def numpy_image(self):
-        return np.array(self._image)
-
     def get_radius(self):
         width, height = self._size
         return int(np.sqrt(width ** 2 + height ** 2) / 2)

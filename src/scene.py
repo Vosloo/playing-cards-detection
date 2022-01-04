@@ -10,7 +10,14 @@ from PIL import Image
 from background import Background
 from card import Card
 from card_factory import CardFactory
-from config import RETRIES, TEST
+from config import (
+    TEST,
+    RETRIES,
+    ROTATE_CARD,
+    SCALE,
+    SHEAR_X,
+    SHEAR_Y,
+)
 
 SYMBOL_INTERSECT_RATIO = 0.5
 
@@ -21,20 +28,21 @@ class Scene:
         self.scene = None
         self.scene_shape = None
 
-        self.max_width = max([card.get_size()[0] for card in self.cards])
+        max_width = max([card.get_size()[0] for card in self.cards])
         self.max_r = max([card.get_radius() for card in self.cards])
 
-        self.bbox_spacing = self.max_width // 3
-        self.bbox_size = self.max_width // 4
+        self.bbox_spacing = max_width // 3
+        self.bbox_size = max_width // 4
         self.bbox_half = self.bbox_size // 2
 
         self.card_bbox_x = [self.max_r, self.max_r + self.bbox_size]
         self.card_bbox_y = [self.max_r, self.max_r + self.bbox_size]
 
-        self.rotate = iaa.Affine(rotate=(-180, 180))
-        self.visible_polygons = {}
+        self.visible_polygons = []
+        self.cards_polygons = []
 
         self.scene = self._generate_scene()
+        self._transform_scene()
 
     def add_background(self, background: Background):
         _, bg_h = background.get_size()
@@ -50,8 +58,9 @@ class Scene:
         plt.imshow(self.scene)
         plt.show()
 
+    # Get size in Pillow format
     def get_size(self):
-        return self.scene_shape
+        return (self.scene_shape[1], self.scene_shape[0])
 
     def _generate_scene(self):
         """
@@ -71,19 +80,35 @@ class Scene:
         )
         scene_h = 2 * (self.max_r + self.bbox_half)
 
-        self.scene_shape = (scene_w, scene_h)
+        # Image in Pillow requires size to be in (width, height) format
+        # whreas shape from image stored in numpy is (height, width, channels)
+        # self.scene_shape is in numpy format
+        self.scene_shape = (scene_h, scene_w, 4)
+        scene = np.zeros(self.scene_shape, dtype=np.uint8)
+        scene = Image.fromarray(scene)
 
-        scene = Image.new("RGBA", self.scene_shape)
+        visible_polygons = {}
 
         for card in self.cards:
             card_center_point = self._get_card_center_point()
-            rotated, anchor_point = self._rotate(card, card_center_point)
+            rotated, anchor_point, visible_polygons = self._rotate(
+                card, card_center_point, visible_polygons
+            )
 
             if type(rotated) is not np.ndarray:
-                print("Failed to add card to scene. Skipping card")
                 continue
 
             self._merge(scene, rotated, anchor_point)
+
+        # mapping all symbols polygons from dictionary into into PolygonsOnImage object
+        self.visible_polygons = PolygonsOnImage(
+            [
+                Polygon.from_shapely(poly, label=card_value)
+                for card_value, polygons in visible_polygons.items()
+                for poly in polygons
+            ],
+            shape=self.scene_shape,
+        )
 
         return scene
 
@@ -96,24 +121,14 @@ class Scene:
 
         return center_point
 
-    def _rotate(self, card: Card, center_point) -> np.array:
-        # Create rotation layer to preserve card shape while rotating
-        rotation_layer = np.zeros((self.max_r * 2, self.max_r * 2, 4), dtype=np.uint8)
-        card_w, card_h = card.get_size()
-
-        card_half_w, card_half_h = card_w // 2, card_h // 2
-
-        offset_x = self.max_r - card_half_w
-        offset_y = self.max_r - card_half_h
-
-        rotation_layer[
-            offset_y : offset_y + card_h, offset_x : offset_x + card_w
-        ] = card.numpy_image()
+    def _rotate(self, card: Card, center_point, visible_polygons) -> np.array:
+        card_image = np.array(card.get_image())
+        card_h, card_w, _ = card_image.shape
 
         # Card figure translation and mapping to Polygons
         card_hulls_tranlated = [hull for hull in card._hulls]
         _card_symbols_polygons = [
-            Polygon(hull, label=f"symbol_{i}")
+            Polygon(hull, label=f"symbol {i}")
             for i, hull in enumerate(card_hulls_tranlated)
         ]
 
@@ -124,32 +139,25 @@ class Scene:
 
         # Combining all card polygons into PolygonsOnImage
         card_polygons = PolygonsOnImage(
-            [*_card_symbols_polygons, _card_polygon], shape=rotation_layer.shape,
-        )
-
-        # Card polygons translation on rotation layer
-        first_card_translation = [
-            offset_x,
-            offset_y,
-        ]
-
-        card_polygons = card_polygons.shift(*first_card_translation)
-
-        # Card polygons translation on scene
-        second_card_translation = (
-            center_point[0] - self.max_r,
-            center_point[1] - self.max_r,
+            [*_card_symbols_polygons, _card_polygon], shape=card_image.shape,
         )
 
         # trying n times till success
+        rotate = iaa.Affine(rotate=ROTATE_CARD, fit_output=True)
         for _ in range(RETRIES):
-            rotated_image, card_polygons_rotated = self.rotate(
-                image=rotation_layer, polygons=card_polygons
+            rotated_card, card_polygons_rotated = rotate(
+                image=card_image, polygons=card_polygons
             )
 
-            card_polygons_rotated = card_polygons_rotated.shift(
-                *second_card_translation
+            rotated_h, rotated_w, _ = rotated_card.shape
+            # Card polygons translation on scene
+            card_translation = (
+                center_point[0] - rotated_w // 2,
+                center_point[1] - rotated_h // 2,
             )
+
+            # Shifting polygons to match their position on scene
+            card_polygons_rotated = card_polygons_rotated.shift(*card_translation)
 
             _card_symbols_polygons_rotated, _card_polygon_rotated = (
                 card_polygons_rotated[:-1],
@@ -159,7 +167,7 @@ class Scene:
             _card_polygon_shapenly = Polygon.to_shapely_polygon(_card_polygon_rotated)
             updated_visible_polygons = {}
 
-            for _card_class, _symbols_poly in self.visible_polygons.items():
+            for _card_class, _symbols_poly in visible_polygons.items():
                 # Set overlapping flag to true, if added card doesn't overlap flag will be set to true
                 overlapping = True
                 updated_symbols_poly = []
@@ -170,9 +178,9 @@ class Scene:
                     _poly_inter = _card_polygon_shapenly.intersection(_symbol_poly)
 
                     # Set flag when at least one is visble
-                    if (
-                        (_symbol_poly_area - _poly_inter.area) / _symbol_poly_area
-                    ) > SYMBOL_INTERSECT_RATIO:
+                    if ((_symbol_poly_area - _poly_inter.area) / _symbol_poly_area) > (
+                        1 - SYMBOL_INTERSECT_RATIO
+                    ):
                         overlapping = False
                         updated_symbols_poly.append(_symbol_poly)
 
@@ -185,10 +193,10 @@ class Scene:
                     Polygon.to_shapely_polygon(_symbol_polygon_rotated)
                     for _symbol_polygon_rotated in _card_symbols_polygons_rotated
                 ]
-                self.visible_polygons = updated_visible_polygons
-                return rotated_image, second_card_translation
+                self.cards_polygons.append(_card_polygon_rotated)
+                return rotated_card, card_translation, updated_visible_polygons
 
-        return None, None
+        return None, None, visible_polygons
 
     # Merging 2 pictures
     def _merge(self, background, foreground, anchor_point):
@@ -200,10 +208,27 @@ class Scene:
 
         background.paste(foreground, anchor_point, foreground)
 
+    def _transform_scene(self):
+        seq = iaa.Sequential(
+            [
+                iaa.Affine(scale=SCALE),
+                iaa.ShearX(SHEAR_X, fit_output=True),
+                iaa.ShearY(SHEAR_Y, fit_output=True),
+            ]
+        )
+        scene, self.visible_polygons = seq(
+            image=np.array(self.scene), polygons=self.visible_polygons
+        )
+        self.scene_shape = scene.shape
+        self.scene = Image.fromarray(scene)
+
+    def _draw_polygons(self):
+        im = self.visible_polygons.draw_on_image(np.array(self.scene.convert("RGB")))
+        return im
+
 
 if __name__ == "__main__":
     cf = CardFactory(TEST)
 
-    cards = cf.get_random_cards(k=3)
+    cards = cf.get_random_cards(k=2)
     scene = Scene(cards)
-    # scene.display()
