@@ -33,5 +33,7 @@ SCALE =  (0.5, 1)
 SHEAR_X = (-20, 20)
 SHEAR_Y = (-20, 20)
 
+RESIZE = (300, 300)
+
 ROOT_PATH = Path(__file__).resolve().parents[1]
 IMAGES_PATH = Path(ROOT_PATH, IMAGES, SCANS)

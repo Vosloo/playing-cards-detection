@@ -2,6 +2,7 @@ from typing import List
 
 import matplotlib.pyplot as plt
 import numpy as np
+from imgaug import ia
 from imgaug import augmenters as iaa
 from imgaug.augmentables import Polygon, PolygonsOnImage
 from matplotlib import pyplot as plt
@@ -45,13 +46,21 @@ class Scene:
         self._transform_scene()
 
     def add_background(self, background: Background):
-        _, bg_h = background.get_size()
-        _, scene_h = self.scene_shape
-        offset_y = int((bg_h / 2) - (scene_h / 2))
+        bg_w, bg_h = background.get_size()
+        scene_h, scene_w, _ = self.scene_shape
 
-        self._merge(
-            background, self.scene, (0, offset_y),
-        )
+        if scene_h > scene_w:
+            offset = (int((bg_w / 2) - (scene_w / 2)), 0)
+            self._merge(background, self.scene, offset)
+        else:
+            offset = (0, int((bg_h / 2) - (scene_h / 2)))
+            self._merge(background, self.scene, offset)
+
+        self.visible_polygons.shift_(*offset)
+        # ia.imshow(self._draw_polygons(np.array(background.get_image())))
+
+    def get_visible_polygons(self):
+        return self.visible_polygons
 
     def display(self):
         plt.axis("off")
@@ -157,7 +166,7 @@ class Scene:
             )
 
             # Shifting polygons to match their position on scene
-            card_polygons_rotated = card_polygons_rotated.shift(*card_translation)
+            card_polygons_rotated.shift_(*card_translation)
 
             _card_symbols_polygons_rotated, _card_polygon_rotated = (
                 card_polygons_rotated[:-1],
@@ -221,10 +230,6 @@ class Scene:
         )
         self.scene_shape = scene.shape
         self.scene = Image.fromarray(scene)
-
-    def _draw_polygons(self):
-        im = self.visible_polygons.draw_on_image(np.array(self.scene.convert("RGB")))
-        return im
 
 
 if __name__ == "__main__":
