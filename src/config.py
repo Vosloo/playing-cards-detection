@@ -4,6 +4,8 @@ IMAGES = "images/"
 BACKGROUNDS = "backgrounds/"
 SCANS = "scans/"
 
+DATASET = "dataset/"
+
 DATA = "data/"
 TEST = "test/"
 

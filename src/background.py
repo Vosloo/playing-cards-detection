@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageMode
 
 
 class Background:
@@ -20,10 +20,8 @@ class Background:
     def get_fname(self):
         return self._fname
 
-    def resize(self, scene_size: tuple):
-        max_size = max(scene_size)
-
-        self._image = self._image.resize((max_size, max_size))
+    def resize(self, new_size: tuple):
+        self._image = self._image.resize(new_size)
 
     def save_background(self, fname):
         self._image.save(fname)
