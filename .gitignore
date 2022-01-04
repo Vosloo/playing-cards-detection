@@ -3,13 +3,18 @@
 
 # Datasets zipped and unpacked are ommited due to their size
 zipped_dataset/*
-images/
+dataset/
 
-img/*
+images/backgrounds/
 
-# Test extracted photos
-out/extracted*
+images/scans/data/annotations/
+images/scans/data/contours/
+images/scans/data/labeled/
+images/scans/data/output/
 
-# Test files
-convert*.py
-creating*.ipynb
+images/scans/test/annotations/
+images/scans/test/contours/
+images/scans/test/labeled/
+images/scans/test/output/
+
+*class_mapping.json
