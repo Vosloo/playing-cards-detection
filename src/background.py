@@ -1,8 +1,6 @@
-from pathlib import Path
-
 from PIL import Image
 
-from config import LABELS, DATASET, IMAGES, ROOT_PATH, IMAGES_PATH, LABELS_PATH
+from config import DATASET_IMAGES_PATH, DATASET_LABELS_PATH
 
 
 class Background:
@@ -26,9 +24,9 @@ class Background:
         self._image = self._image.resize(new_size)
 
     def save_background(self, fname, labels):
-        self._image.save(IMAGES_PATH / (fname + ".jpg"))
-        
-        with open(LABELS_PATH / (fname + ".txt"), "w") as f:
+        self._image.save(DATASET_IMAGES_PATH / (fname + ".jpg"))
+
+        with open(DATASET_LABELS_PATH / (fname + ".txt"), "w") as f:
             f.writelines(labels)
 
     @property

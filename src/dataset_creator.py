@@ -11,7 +11,18 @@ from tqdm import tqdm
 
 from background_factory import BackgroundFactory
 from card_factory import CardFactory
-from config import LABELS, CLASS_MAPPING, DATA, DATASET, IMAGES, RESIZE, ROOT_PATH, SCANS
+from config import (
+    CLASS_MAPPING,
+    DATA,
+    DATASET_LABELS_PATH,
+    IMAGES,
+    RESIZE,
+    ROOT_PATH,
+    SCANS,
+    DATASET_IMAGES_PATH,
+    DATASET_LABELS_PATH
+)
+import config
 from scene import Scene
 
 
@@ -20,8 +31,8 @@ class DatasetCreator:
         self.max_no_cards = max_no_cards
         self.no_backgrounds = no_backgrounds
         self.no_outputs = no_scenes
-        self.labels_path = Path(ROOT_PATH, DATASET, LABELS)
-        self.images_path = Path(ROOT_PATH, DATASET, IMAGES)
+        self.labels_path = DATASET_LABELS_PATH
+        self.images_path = DATASET_IMAGES_PATH
 
         self.card_factory = CardFactory(dataset_path=DATA)
         self.background_factory = BackgroundFactory()
@@ -85,7 +96,7 @@ class DatasetCreator:
                         + "\n"
                     )
 
-                fname =  f"{no_scenes}_" + "".join([card.get_fname() for card in cards])
+                fname = f"{no_scenes}_" + "".join([card.get_fname() for card in cards])
 
                 # Save image and labels
                 background_copy.save_background(fname, labels)
@@ -101,5 +112,5 @@ def draw_polygons(polygons, image):
 
 
 if __name__ == "__main__":
-    dc = DatasetCreator(max_no_cards=3, no_backgrounds=10, no_scenes=100)
+    dc = DatasetCreator(max_no_cards=3, no_backgrounds=10, no_scenes=1000)
     dc.create_dataset()
